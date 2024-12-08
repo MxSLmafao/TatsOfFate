@@ -7,6 +7,7 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers,
     ]
 });
 
@@ -60,7 +61,13 @@ client.on('interactionCreate', async interaction => {
                 .setStyle(ButtonStyle.Danger)
                 .setEmoji('❌');
 
-            const row = new ActionRowBuilder().addComponents(acceptButton, denyButton);
+            const withdrawButton = new ButtonBuilder()
+                .setCustomId(`withdraw_${interaction.user.id}_${opponent.id}`)
+                .setLabel('Withdraw Challenge')
+                .setStyle(ButtonStyle.Secondary)
+                .setEmoji('🔄');
+
+            const row = new ActionRowBuilder().addComponents(acceptButton, denyButton, withdrawButton);
 
             const response = await interaction.reply({
                 embeds: [embed],
@@ -167,26 +174,63 @@ client.on('interactionCreate', async interaction => {
                 embeds: [gameEmbed],
                 components: [createCardSelectionMenu(challengerId, challengedId)]
             });
-        } else if (action === 'deny') {
+        } else if (action === 'deny' || action === 'withdraw') {
+            // Verify user permissions for the action
+            if (action === 'withdraw') {
+                if (interaction.user.id !== challengerId) {
+                    await interaction.reply({ 
+                        content: '❌ Only the challenger can withdraw their challenge!', 
+                        ephemeral: true 
+                    });
+                    return;
+                }
+            } else if (action === 'deny') {
+                if (interaction.user.id !== challengedId) {
+                    await interaction.reply({ 
+                        content: '❌ Only the challenged player can deny the challenge!', 
+                        ephemeral: true 
+                    });
+                    return;
+                }
+            }
+
             // Clear the timeout
             const timeoutKey = `${challengerId}_${challengedId}`;
             clearTimeout(challengeTimeout.get(timeoutKey));
             challengeTimeout.delete(timeoutKey);
 
-            const deniedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
-                .setTitle('❌ Challenge Denied')
+            const actionText = action === 'deny' ? 'Denied' : 'Withdrawn';
+            const statusText = action === 'deny' ? 
+                `Challenge was denied by <@${challengedId}>` : 
+                `Challenge was withdrawn by <@${challengerId}>`;
+
+            const responseEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+                .setTitle(`❌ Challenge ${actionText}`)
                 .setColor('#ff0000')
                 .setFields(
                     { name: '🎲 Game', value: 'Three Card Game' },
-                    { name: '📌 Status', value: 'Challenge was denied' }
-                );
+                    { name: '📌 Status', value: statusText }
+                )
+                .setTimestamp();
 
             await interaction.update({
-                embeds: [deniedEmbed],
+                embeds: [responseEmbed],
                 components: []
             });
             
+            // Clean up the game state
             gameManager.removeGame(challengerId, challengedId);
+            
+            // Notify the other player
+            const notifyUserId = action === 'deny' ? challengerId : challengedId;
+            try {
+                const user = await interaction.client.users.fetch(notifyUserId);
+                await user.send({
+                    embeds: [responseEmbed]
+                });
+            } catch (error) {
+                console.error('Failed to notify user:', error);
+            }
         }
     } else if (interaction.isStringSelectMenu()) {
         if (interaction.customId.startsWith('card_select_')) {

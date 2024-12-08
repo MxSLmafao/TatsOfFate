@@ -25,9 +25,10 @@ This is a two-player card game with three cards:
 
 **How to Play:**
 1. Challenge a player using !play challenge @player
-2. The challenged player accepts using !play accept
-3. Both players select their cards using !play select <card>
-4. The winner is automatically determined based on the cards played
+2. The challenged player can accept or deny the challenge
+3. The challenger can withdraw their challenge before it's accepted
+4. Both players select their cards using !play select <card>
+5. The winner is automatically determined based on the cards played
 
 Good luck!
 `;
