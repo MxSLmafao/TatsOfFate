@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Collection, EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, EmbedBuilder, ButtonBuilder, ActionRowBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
 const { GameManager } = require('./game/GameManager.js');
 const { CARDS } = require('./constants.js');
 
@@ -10,7 +10,7 @@ const client = new Client({
     ]
 });
 
-const gameManager = new GameManager();
+const gameManager = new GameManager(client);
 const challengeTimeout = new Map(); // Store challenge timeouts
 
 client.once('ready', () => {
@@ -23,39 +23,42 @@ client.on('interactionCreate', async interaction => {
             const opponent = interaction.options.getUser('opponent');
             
             if (opponent.bot) {
-                await interaction.reply({ content: 'You cannot challenge a bot!', ephemeral: true });
+                await interaction.reply({ content: '❌ You cannot challenge a bot!', ephemeral: true });
                 return;
             }
 
             if (opponent.id === interaction.user.id) {
-                await interaction.reply({ content: 'You cannot challenge yourself!', ephemeral: true });
+                await interaction.reply({ content: '❌ You cannot challenge yourself!', ephemeral: true });
                 return;
             }
 
             const result = gameManager.createGame(interaction.user.id, opponent.id);
             if (result.error) {
-                await interaction.reply({ content: result.error, ephemeral: true });
+                await interaction.reply({ content: `❌ ${result.error}`, ephemeral: true });
                 return;
             }
 
             const embed = new EmbedBuilder()
-                .setColor('#0099ff')
+                .setColor('#FFD700')
                 .setTitle('🎮 New Challenge!')
                 .setDescription(`${opponent.toString()}, you have been challenged by ${interaction.user.toString()}!`)
                 .addFields(
-                    { name: 'Game', value: 'Three Card Game' },
-                    { name: 'Time Remaining', value: '2 hours' }
-                );
+                    { name: '🎲 Game', value: 'Three Card Game' },
+                    { name: '⏳ Time Remaining', value: '2 hours' }
+                )
+                .setTimestamp();
 
             const acceptButton = new ButtonBuilder()
                 .setCustomId(`accept_${interaction.user.id}_${opponent.id}`)
                 .setLabel('Accept Challenge')
-                .setStyle(ButtonStyle.Success);
+                .setStyle(ButtonStyle.Success)
+                .setEmoji('✅');
 
             const denyButton = new ButtonBuilder()
                 .setCustomId(`deny_${interaction.user.id}_${opponent.id}`)
                 .setLabel('Deny Challenge')
-                .setStyle(ButtonStyle.Danger);
+                .setStyle(ButtonStyle.Danger)
+                .setEmoji('❌');
 
             const row = new ActionRowBuilder().addComponents(acceptButton, denyButton);
 
@@ -72,8 +75,8 @@ client.on('interactionCreate', async interaction => {
                         .setColor('#ff0000')
                         .setTitle('❌ Challenge Expired')
                         .setFields(
-                            { name: 'Game', value: 'Three Card Game' },
-                            { name: 'Status', value: 'Challenge has expired' }
+                            { name: '🎲 Game', value: 'Three Card Game' },
+                            { name: '📌 Status', value: 'Challenge has expired' }
                         );
 
                     await response.edit({
@@ -91,27 +94,28 @@ client.on('interactionCreate', async interaction => {
             challengeTimeout.set(`${interaction.user.id}_${opponent.id}`, timeout);
         } else if (interaction.commandName === 'help') {
             const helpEmbed = new EmbedBuilder()
-                .setColor('#0099ff')
+                .setColor('#FFD700')
                 .setTitle('Three Card Game - Help')
                 .setDescription('A two-player card game with three cards representing different powers.')
                 .addFields(
-                    { name: 'Cards', value: 
+                    { name: '🎴 Cards', value: 
                         `• The Oppressed (${CARDS.oppressed}) - The power of unity\n` +
                         `• The Emperor (${CARDS.emperor}) - The symbol of authority\n` +
                         `• The People (${CARDS.people}) - The voice of the masses`
                     },
-                    { name: 'Game Rules', value:
+                    { name: '📋 Game Rules', value:
                         `• The Oppressed defeats The Emperor\n` +
                         `• The Emperor defeats The People\n` +
                         `• The People defeats The Oppressed`
                     },
-                    { name: 'How to Play', value:
+                    { name: '🎮 How to Play', value:
                         '1. Use /challenge @player to challenge someone\n' +
                         '2. The challenged player has 2 hours to accept\n' +
                         '3. Once accepted, both players select their cards\n' +
                         '4. The winner is determined automatically'
                     }
-                );
+                )
+                .setTimestamp();
 
             await interaction.reply({ embeds: [helpEmbed] });
         }
@@ -119,14 +123,14 @@ client.on('interactionCreate', async interaction => {
         const [action, challengerId, challengedId] = interaction.customId.split('_');
         
         if (interaction.user.id !== challengedId) {
-            await interaction.reply({ content: 'This button is not for you!', ephemeral: true });
+            await interaction.reply({ content: '❌ This button is not for you!', ephemeral: true });
             return;
         }
 
         if (action === 'accept') {
             const result = gameManager.acceptGame(interaction.user.id);
             if (result.error) {
-                await interaction.reply({ content: result.error, ephemeral: true });
+                await interaction.reply({ content: `❌ ${result.error}`, ephemeral: true });
                 return;
             }
 
@@ -139,8 +143,8 @@ client.on('interactionCreate', async interaction => {
                 .setTitle('🎮 Challenge Accepted!')
                 .setColor('#00ff00')
                 .setFields(
-                    { name: 'Game', value: 'Three Card Game' },
-                    { name: 'Status', value: 'Game has started!' }
+                    { name: '🎲 Game', value: 'Three Card Game' },
+                    { name: '📌 Status', value: 'Game has started!' }
                 );
 
             await interaction.update({
@@ -173,28 +177,30 @@ client.on('interactionCreate', async interaction => {
                 .setTitle('❌ Challenge Denied')
                 .setColor('#ff0000')
                 .setFields(
-                    { name: 'Game', value: 'Three Card Game' },
-                    { name: 'Status', value: 'Challenge was denied' }
+                    { name: '🎲 Game', value: 'Three Card Game' },
+                    { name: '📌 Status', value: 'Challenge was denied' }
                 );
 
             await interaction.update({
                 embeds: [deniedEmbed],
                 components: []
             });
-
+            
+            gameManager.removeGame(challengerId, challengedId);
+        }
     } else if (interaction.isStringSelectMenu()) {
         if (interaction.customId.startsWith('card_select_')) {
             const [, , challengerId, challengedId] = interaction.customId.split('_');
             const playerId = interaction.user.id;
             
             if (playerId !== challengerId && playerId !== challengedId) {
-                await interaction.reply({ content: 'This game is not for you!', ephemeral: true });
+                await interaction.reply({ content: '❌ This game is not for you!', ephemeral: true });
                 return;
             }
 
             const result = gameManager.playCard(playerId, interaction.values[0]);
             if (result.error) {
-                await interaction.reply({ content: result.error, ephemeral: true });
+                await interaction.reply({ content: `❌ ${result.error}`, ephemeral: true });
                 return;
             }
 
@@ -202,7 +208,7 @@ client.on('interactionCreate', async interaction => {
 
             if (result.waitingForOpponent) {
                 await interaction.followUp({
-                    content: 'Card selected! Waiting for opponent...',
+                    content: '✅ Card selected! Waiting for opponent...',
                     ephemeral: true
                 });
                 return;
@@ -246,8 +252,6 @@ client.on('interactionCreate', async interaction => {
                 });
             }
         }
-            gameManager.removeGame(challengerId, challengedId);
-        }
     }
 });
 
@@ -281,12 +285,12 @@ function createCardSelectionMenu(challengerId, challengedId) {
 
 function createGameStatusEmbed(game, roundResult = null) {
     const embed = new EmbedBuilder()
-        .setColor('#0099ff')
+        .setColor('#FFD700')
         .setTitle(`🎮 Three Card Game - Round ${game.currentRound}/${game.maxRounds}`)
         .addFields(
-            { name: 'Scores', value: 
-                `<@${game.challengerId}>: ${game.scores[game.challengerId]}\n` +
-                `<@${game.challengedId}>: ${game.scores[game.challengedId]}`
+            { name: '📊 Scores', value: 
+                `<@${game.challengerId}>: ${game.scores[game.challengerId]} 🏆\n` +
+                `<@${game.challengedId}>: ${game.scores[game.challengedId]} 🏆`
             }
         );
 
@@ -294,20 +298,20 @@ function createGameStatusEmbed(game, roundResult = null) {
         if (roundResult.gameComplete) {
             embed.setDescription('🏆 Game Complete!')
                 .addFields(
-                    { name: 'Final Winner', value: roundResult.finalWinner ? `<@${roundResult.finalWinner}>` : "It's a tie!" },
-                    { name: 'Final Scores', value: 
-                        `<@${game.challengerId}>: ${roundResult.scores[game.challengerId]}\n` +
-                        `<@${game.challengedId}>: ${roundResult.scores[game.challengedId]}`
+                    { name: '👑 Final Winner', value: roundResult.finalWinner ? `<@${roundResult.finalWinner}>` : "🤝 It's a tie!" },
+                    { name: '📈 Final Scores', value: 
+                        `<@${game.challengerId}>: ${roundResult.scores[game.challengerId]} 🏆\n` +
+                        `<@${game.challengedId}>: ${roundResult.scores[game.challengedId]} 🏆`
                     }
                 );
         } else {
-            embed.setDescription(`Round ${game.currentRound - 1} Results:`)
+            embed.setDescription(`📝 Round ${game.currentRound - 1} Results:`)
                 .addFields(
-                    { name: 'Cards Played', value:
+                    { name: '🎴 Cards Played', value:
                         `<@${game.challengerId}>: ${CARDS[roundResult.player1Card]}\n` +
                         `<@${game.challengedId}>: ${CARDS[roundResult.player2Card]}`
                     },
-                    { name: 'Round Winner', value: roundResult.roundWinner ? `<@${roundResult.roundWinner}>` : "It's a tie!" }
+                    { name: '🏅 Round Winner', value: roundResult.roundWinner ? `<@${roundResult.roundWinner}>` : "🤝 It's a tie!" }
                 );
         }
     }

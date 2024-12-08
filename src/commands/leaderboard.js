@@ -13,7 +13,7 @@ class LeaderboardCommand {
 
     async execute(interaction) {
         try {
-            // Get top 5 players
+            // Get top 5 players with detailed statistics
             const result = await pool.query(`
                 SELECT 
                     discord_id,
@@ -33,20 +33,36 @@ class LeaderboardCommand {
             `);
 
             const embed = new EmbedBuilder()
-                .setColor('#0099ff')
-                .setTitle('🏆 Three Card Game - Top Players')
-                .setDescription('Top 5 players by matches won')
-                .setTimestamp();
+                .setColor('#FFD700')  // Gold color for the leaderboard
+                .setTitle('🏆 Three Card Game - Leaderboard')
+                .setDescription('Top Players by Victories')
+                .setTimestamp()
+                .setFooter({ text: 'Updated' });
 
             if (result.rows.length === 0) {
-                embed.setDescription('No matches played yet! Be the first to play!');
+                embed.setDescription('🎮 No matches played yet! Challenge someone to be the first on the leaderboard!');
             } else {
+                // Add medal emojis for top 3
+                const medals = ['🥇', '🥈', '🥉'];
+                
                 result.rows.forEach((player, index) => {
+                    const medal = index < 3 ? medals[index] : '👤';
+                    const rankText = `${medal} Rank #${index + 1}`;
+                    
                     embed.addFields({
-                        name: `${index + 1}. ${player.username}`,
-                        value: `Wins: ${player.matches_won} | Games: ${player.matches_played} | Win Rate: ${player.win_rate}%`,
+                        name: rankText,
+                        value: `**${player.username}**\n` +
+                              `📊 Stats:\n` +
+                              `• Victories: ${player.matches_won} 🏆\n` +
+                              `• Total Games: ${player.matches_played} 🎮\n` +
+                              `• Win Rate: ${player.win_rate}% ✨`,
                         inline: false
                     });
+
+                    // Set thumbnail to the top player's avatar
+                    if (index === 0 && player.avatar_url) {
+                        embed.setThumbnail(player.avatar_url);
+                    }
                 });
             }
 
@@ -54,7 +70,7 @@ class LeaderboardCommand {
         } catch (error) {
             console.error('Error fetching leaderboard:', error);
             await interaction.reply({ 
-                content: 'Sorry, there was an error fetching the leaderboard!',
+                content: '❌ Sorry, there was an error fetching the leaderboard! Please try again later.',
                 ephemeral: true 
             });
         }

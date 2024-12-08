@@ -1,9 +1,10 @@
 const { Game } = require('./Game.js');
 
 class GameManager {
-    constructor() {
+    constructor(discordClient) {
         this.games = new Map();
         this.playerToGame = new Map();
+        this.client = discordClient;
     }
 
     createGame(challengerId, challengedId) {
@@ -11,7 +12,7 @@ class GameManager {
             return { error: 'One or both players are already in a game!' };
         }
 
-        const game = new Game(challengerId, challengedId);
+        const game = new Game(challengerId, challengedId, this.client);
         this.games.set(game.id, game);
         this.playerToGame.set(challengerId, game.id);
         this.playerToGame.set(challengedId, game.id);

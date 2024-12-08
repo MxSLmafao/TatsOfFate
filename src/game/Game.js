@@ -1,10 +1,13 @@
 const { CARDS, WINNING_COMBINATIONS } = require('../constants.js');
+const { Pool } = require('pg');
+const { Client } = require('discord.js');
 
 class Game {
-    constructor(challengerId, challengedId) {
+    constructor(challengerId, challengedId, discordClient) {
         this.id = Math.random().toString(36).substring(7);
         this.challengerId = challengerId;
         this.challengedId = challengedId;
+        this.client = discordClient;
         this.player1Card = null;
         this.player2Card = null;
         this.started = false;
@@ -121,24 +124,30 @@ class Game {
     }
 
     async updatePlayerStats(winnerId, loserId = null) {
-        const pool = new Pool({
-            connectionString: process.env.DATABASE_URL
-        });
-
+        let pool = null;
         try {
+            pool = new Pool({
+                connectionString: process.env.DATABASE_URL
+            });
+
             // Start transaction
             await pool.query('BEGIN');
 
             // Update or insert players
             const players = [this.challengerId, this.challengedId];
             for (const playerId of players) {
-                const user = await client.users.fetch(playerId);
+                const user = await this.client.users.fetch(playerId).catch(error => {
+                    console.error(`Failed to fetch user ${playerId}:`, error);
+                    throw new Error('Failed to fetch user information');
+                });
+                const avatarUrl = user.displayAvatarURL({ format: 'png', size: 128 });
+                
                 await pool.query(`
                     INSERT INTO players (discord_id, username, avatar_url, matches_played)
                     VALUES ($1, $2, $3, 1)
                     ON CONFLICT (discord_id) DO UPDATE SET
-                        username = EXCLUDED.username,
-                        avatar_url = EXCLUDED.avatar_url,
+                        username = $2,
+                        avatar_url = $3,
                         matches_played = players.matches_played + 1,
                         matches_won = CASE 
                             WHEN players.discord_id = $4 THEN players.matches_won + 1
@@ -148,17 +157,17 @@ class Game {
                 `, [
                     playerId,
                     user.username,
-                    user.displayAvatarURL(),
-                    winnerId
+                    avatarUrl,
+                    winnerId || null
                 ]);
             }
 
-            // Record match history
+            // Record match history if there's a winner
             if (winnerId && loserId) {
                 await pool.query(`
                     INSERT INTO match_history (
-                        match_id, winner_id, loser_id, winner_score, loser_score
-                    ) VALUES ($1, $2, $3, $4, $5)
+                        match_id, winner_id, loser_id, winner_score, loser_score, played_at
+                    ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
                 `, [
                     this.id,
                     winnerId,
@@ -169,11 +178,13 @@ class Game {
             }
 
             await pool.query('COMMIT');
+            console.log(`Successfully updated stats for game ${this.id}`);
         } catch (error) {
-            await pool.query('ROLLBACK');
+            if (pool) await pool.query('ROLLBACK');
             console.error('Error updating player stats:', error);
+            throw new Error('Failed to update player statistics');
         } finally {
-            pool.end();
+            if (pool) await pool.end();
         }
     }
 }
