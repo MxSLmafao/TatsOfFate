@@ -10,13 +10,7 @@ const commands = [
             option.setName('opponent')
                 .setDescription('The player you want to challenge')
                 .setRequired(true)
-        ),
-    new SlashCommandBuilder()
-        .setName('help')
-        .setDescription('Display help information about the game'),
-    new SlashCommandBuilder()
-        .setName('leaderboard')
-        .setDescription('Display the top 5 players'),
+        )
 ].map(command => command.toJSON());
 
 const rest = new REST({ version: '9' }).setToken(process.env.DISCORD_TOKEN);
