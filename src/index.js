@@ -49,13 +49,25 @@ client.on('interactionCreate', async interaction => {
                 )
                 .setTimestamp();
 
+            const acceptButton = new ButtonBuilder()
+                .setCustomId(`accept_${interaction.user.id}_${opponent.id}`)
+                .setLabel('Accept Challenge')
+                .setStyle(ButtonStyle.Success)
+                .setEmoji('✅');
+
+            const denyButton = new ButtonBuilder()
+                .setCustomId(`deny_${interaction.user.id}_${opponent.id}`)
+                .setLabel('Deny Challenge')
+                .setStyle(ButtonStyle.Danger)
+                .setEmoji('❌');
+
             const withdrawButton = new ButtonBuilder()
                 .setCustomId(`withdraw_${interaction.user.id}_${opponent.id}`)
                 .setLabel('Withdraw Challenge')
-                .setStyle(ButtonStyle.Danger)
+                .setStyle(ButtonStyle.Secondary)
                 .setEmoji('🔄');
 
-            const row = new ActionRowBuilder().addComponents(withdrawButton);
+            const row = new ActionRowBuilder().addComponents(acceptButton, denyButton, withdrawButton);
 
             const response = await interaction.reply({
                 embeds: [embed],
@@ -87,6 +99,33 @@ client.on('interactionCreate', async interaction => {
             }, 2 * 60 * 60 * 1000); // 2 hours in milliseconds
 
             challengeTimeout.set(`${interaction.user.id}_${opponent.id}`, timeout);
+        } else if (interaction.commandName === 'help') {
+            const helpEmbed = new EmbedBuilder()
+                .setColor('#FFD700')
+                .setTitle('Three Card Game - Help')
+                .setDescription('A two-player card game with three cards representing different powers.')
+                .addFields(
+                    { name: '🎴 Cards', value: 
+                        `• The Oppressed (${CARDS.oppressed}) - The power of unity\n` +
+                        `• The Emperor (${CARDS.emperor}) - The symbol of authority\n` +
+                        `• The People (${CARDS.people}) - The voice of the masses`
+                    },
+                    { name: '📋 Game Rules', value:
+                        `• The Oppressed defeats The Emperor\n` +
+                        `• The Emperor defeats The People\n` +
+                        `• The People defeats The Oppressed`
+                    },
+                    { name: '🎮 How to Play', value:
+                        '1. Use /challenge @player to challenge someone\n' +
+                        '2. The challenged player has 2 hours to accept or deny\n' +
+                        '3. The challenger can withdraw their challenge\n' +
+                        '4. Once accepted, both players select their cards\n' +
+                        '5. The winner is determined automatically'
+                    }
+                )
+                .setTimestamp();
+
+            await interaction.reply({ embeds: [helpEmbed] });
         }
     } else if (interaction.isButton()) {
         const [action, challengerId, challengedId] = interaction.customId.split('_');
@@ -167,14 +206,25 @@ client.on('interactionCreate', async interaction => {
                     ephemeral: true
                 });
             }
-        } else if (action === 'withdraw') {
-            // Verify if the user is the challenger
-            if (interaction.user.id !== challengerId) {
-                await interaction.reply({
-                    content: '❌ Only the challenger can withdraw their challenge!',
-                    ephemeral: true
-                });
-                return;
+        } else if (action === 'deny' || action === 'withdraw') {
+            if (action === 'withdraw') {
+                // Only the challenger can withdraw
+                if (interaction.user.id !== challengerId) {
+                    await interaction.reply({
+                        content: '❌ Only the challenger can withdraw their challenge!',
+                        ephemeral: true
+                    });
+                    return;
+                }
+            } else if (action === 'deny') {
+                // Only the challenged player can deny
+                if (interaction.user.id !== challengedId) {
+                    await interaction.reply({
+                        content: '❌ Only the challenged player can deny the challenge!',
+                        ephemeral: true
+                    });
+                    return;
+                }
             }
 
             // Clear the timeout
@@ -185,25 +235,31 @@ client.on('interactionCreate', async interaction => {
             // Clean up the game state
             gameManager.removeGame(challengerId, challengedId);
 
-            // Create response embed for withdrawal
-            const withdrawEmbed = new EmbedBuilder()
-                .setTitle('❌ Challenge Withdrawn')
+            // Create response embed
+            const actionText = action === 'deny' ? 'Denied' : 'Withdrawn';
+            const statusText = action === 'deny' ? 
+                `Challenge was denied by <@${challengedId}>` : 
+                `Challenge was withdrawn by <@${challengerId}>`;
+
+            const responseEmbed = new EmbedBuilder()
+                .setTitle(`❌ Challenge ${actionText}`)
                 .setColor('#ff0000')
                 .addFields(
                     { name: '🎲 Game', value: 'Three Card Game' },
-                    { name: '📌 Status', value: `Challenge was withdrawn by <@${challengerId}>` }
+                    { name: '📌 Status', value: statusText }
                 )
                 .setTimestamp();
 
             // Update the original message
             await interaction.update({
-                embeds: [withdrawEmbed],
+                embeds: [responseEmbed],
                 components: []
             });
 
-            // Notify the challenged player
+            // Send notification to the appropriate player
+            const notifyUserId = action === 'deny' ? challengerId : challengedId;
             await interaction.followUp({
-                content: `<@${challengedId}>, the challenge has been withdrawn.`
+                content: `<@${notifyUserId}>, the challenge has been ${action === 'deny' ? 'denied' : 'withdrawn'}.`
             });
         }
     } else if (interaction.isStringSelectMenu()) {
