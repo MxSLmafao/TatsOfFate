@@ -16,7 +16,7 @@ class GameManager {
         this.playerToGame.set(challengerId, game.id);
         this.playerToGame.set(challengedId, game.id);
 
-        return { success: true };
+        return { success: true, gameId: game.id };
     }
 
     acceptGame(playerId) {
@@ -35,7 +35,16 @@ class GameManager {
         }
 
         game.start();
-        return { success: true };
+        return { success: true, gameId: game.id };
+    }
+
+    removeGame(challengerId, challengedId) {
+        const challengerGameId = this.playerToGame.get(challengerId);
+        if (challengerGameId) {
+            this.games.delete(challengerGameId);
+            this.playerToGame.delete(challengerId);
+            this.playerToGame.delete(challengedId);
+        }
     }
 
     playCard(playerId, card) {
@@ -49,25 +58,37 @@ class GameManager {
             return { error: 'Game not found!' };
         }
 
-        const result = game.playCard(playerId, card);
-        
-        if (game.isComplete()) {
-            // Cleanup
-            this.playerToGame.delete(game.challengerId);
-            this.playerToGame.delete(game.challengedId);
-            this.games.delete(gameId);
-            
-            return {
-                gameComplete: true,
-                winner: game.getWinner(),
-                cards: {
-                    player1: game.player1Card,
-                    player2: game.player2Card
-                }
-            };
+        if (!game.started) {
+            return { error: 'Game has not started yet!' };
         }
 
-        return result;
+        const result = game.playCard(playerId, card);
+        if (result.error) {
+            return result;
+        }
+        
+        if (game.isComplete()) {
+            const roundResult = game.getWinner();
+            
+            if (roundResult.gameComplete) {
+                // Final round completed, clean up the game
+                this.playerToGame.delete(game.challengerId);
+                this.playerToGame.delete(game.challengedId);
+                this.games.delete(gameId);
+            }
+            
+            return roundResult;
+        }
+
+        return {
+            success: true,
+            currentRound: game.currentRound,
+            waitingForOpponent: true
+        };
+    }
+
+    getGame(gameId) {
+        return this.games.get(gameId);
     }
 }
 
