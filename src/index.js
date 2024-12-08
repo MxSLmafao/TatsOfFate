@@ -117,10 +117,9 @@ client.on('interactionCreate', async interaction => {
                     },
                     { name: '🎮 How to Play', value:
                         '1. Use /challenge @player to challenge someone\n' +
-                        '2. The challenged player has 2 hours to accept or deny\n' +
-                        '3. The challenger can withdraw their challenge\n' +
-                        '4. Once accepted, both players select their cards\n' +
-                        '5. The winner is determined automatically'
+                        '2. The challenged player has 2 hours to accept\n' +
+                        '3. Once accepted, both players select their cards\n' +
+                        '4. The winner is determined automatically'
                     }
                 )
                 .setTimestamp();
@@ -207,8 +206,8 @@ client.on('interactionCreate', async interaction => {
                 });
             }
         } else if (action === 'deny' || action === 'withdraw') {
+            // Verify permissions
             if (action === 'withdraw') {
-                // Only the challenger can withdraw
                 if (interaction.user.id !== challengerId) {
                     await interaction.reply({
                         content: '❌ Only the challenger can withdraw their challenge!',
@@ -217,7 +216,6 @@ client.on('interactionCreate', async interaction => {
                     return;
                 }
             } else if (action === 'deny') {
-                // Only the challenged player can deny
                 if (interaction.user.id !== challengedId) {
                     await interaction.reply({
                         content: '❌ Only the challenged player can deny the challenge!',
@@ -256,10 +254,9 @@ client.on('interactionCreate', async interaction => {
                 components: []
             });
 
-            // Send notification to the appropriate player
-            const notifyUserId = action === 'deny' ? challengerId : challengedId;
+            // Notify the other player in the channel
             await interaction.followUp({
-                content: `<@${notifyUserId}>, the challenge has been ${action === 'deny' ? 'denied' : 'withdrawn'}.`
+                content: `<@${action === 'deny' ? challengerId : challengedId}>, the challenge has been ${action === 'deny' ? 'denied' : 'withdrawn'}.`
             });
         }
     } else if (interaction.isStringSelectMenu()) {

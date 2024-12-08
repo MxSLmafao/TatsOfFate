@@ -16,7 +16,7 @@ const commands = [
         .setDescription('Display help information about the game'),
     new SlashCommandBuilder()
         .setName('leaderboard')
-        .setDescription('Display the top 5 players')
+        .setDescription('Display the top 5 players'),
 ].map(command => command.toJSON());
 
 const rest = new REST({ version: '9' }).setToken(process.env.DISCORD_TOKEN);
