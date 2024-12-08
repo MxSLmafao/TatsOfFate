@@ -129,7 +129,13 @@ client.on('interactionCreate', async interaction => {
     } else if (interaction.isButton()) {
         const [action, challengerId, challengedId] = interaction.customId.split('_');
         
-        if (interaction.user.id !== challengedId) {
+        // For withdraw action, check if user is the challenger
+        if (action === 'withdraw' && interaction.user.id !== challengerId) {
+            await interaction.reply({ content: '❌ Only the challenger can withdraw their challenge!', ephemeral: true });
+            return;
+        }
+        // For other actions (accept/deny), check if user is the challenged player
+        else if (action !== 'withdraw' && interaction.user.id !== challengedId) {
             await interaction.reply({ content: '❌ This button is not for you!', ephemeral: true });
             return;
         }
@@ -206,11 +212,13 @@ client.on('interactionCreate', async interaction => {
                 });
             }
         } else if (action === 'deny' || action === 'withdraw') {
-            // Verify permissions
+            let actionResult = { success: true };
+            
             if (action === 'withdraw') {
-                if (interaction.user.id !== challengerId) {
+                actionResult = gameManager.withdrawChallenge(challengerId);
+                if (actionResult.error) {
                     await interaction.reply({
-                        content: '❌ Only the challenger can withdraw their challenge!',
+                        content: `❌ ${actionResult.error}`,
                         ephemeral: true
                     });
                     return;
@@ -223,15 +231,13 @@ client.on('interactionCreate', async interaction => {
                     });
                     return;
                 }
+                gameManager.removeGame(challengerId, challengedId);
             }
 
             // Clear the timeout
             const timeoutKey = `${challengerId}_${challengedId}`;
             clearTimeout(challengeTimeout.get(timeoutKey));
             challengeTimeout.delete(timeoutKey);
-
-            // Clean up the game state
-            gameManager.removeGame(challengerId, challengedId);
 
             // Create response embed
             const actionText = action === 'deny' ? 'Denied' : 'Withdrawn';

@@ -26,9 +26,11 @@ This is a two-player card game with three cards:
 **How to Play:**
 1. Challenge a player using !play challenge @player
 2. The challenged player can accept or deny the challenge
-3. The challenger can withdraw their challenge before it's accepted
-4. Both players select their cards using !play select <card>
+3. The challenger can withdraw their challenge using the "Withdraw Challenge" button
+4. Once accepted, both players select their cards using !play select <card>
 5. The winner is automatically determined based on the cards played
+
+Note: Challenges can only be withdrawn before they are accepted!
 
 Good luck!
 `;

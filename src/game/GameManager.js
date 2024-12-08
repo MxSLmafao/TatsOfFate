@@ -91,6 +91,38 @@ class GameManager {
     getGame(gameId) {
         return this.games.get(gameId);
     }
+
+    withdrawChallenge(challengerId) {
+        const gameId = this.playerToGame.get(challengerId);
+        if (!gameId) {
+            return { error: 'No pending challenge found!' };
+        }
+
+        const game = this.games.get(gameId);
+        if (!game) {
+            return { error: 'Game not found!' };
+        }
+
+        if (game.challengerId !== challengerId) {
+            return { error: 'Only the challenger can withdraw their challenge!' };
+        }
+
+        if (game.started) {
+            return { error: 'Cannot withdraw after the game has started!' };
+        }
+
+        // Clean up the game
+        this.playerToGame.delete(game.challengerId);
+        this.playerToGame.delete(game.challengedId);
+        this.games.delete(gameId);
+
+        return { 
+            success: true, 
+            message: 'Challenge successfully withdrawn!',
+            challengerId: game.challengerId,
+            challengedId: game.challengedId
+        };
+    }
 }
 
 module.exports = { GameManager };
