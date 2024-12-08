@@ -93,25 +93,34 @@ class GameManager {
     }
 
     withdrawChallenge(challengerId) {
+        // Verify there's a pending challenge
         const gameId = this.playerToGame.get(challengerId);
         if (!gameId) {
             return { error: 'No pending challenge found!' };
         }
 
+        // Verify game exists
         const game = this.games.get(gameId);
         if (!game) {
+            // Clean up any lingering player-to-game mappings
+            this.playerToGame.delete(challengerId);
             return { error: 'Game not found!' };
         }
 
+        // Verify the user is the challenger
         if (game.challengerId !== challengerId) {
             return { error: 'Only the challenger can withdraw their challenge!' };
         }
 
+        // Verify the game hasn't started
         if (game.started) {
             return { error: 'Cannot withdraw after the game has started!' };
         }
 
-        // Clean up the game
+        // Store player IDs before cleanup
+        const challengedId = game.challengedId;
+
+        // Clean up the game state
         this.playerToGame.delete(game.challengerId);
         this.playerToGame.delete(game.challengedId);
         this.games.delete(gameId);
@@ -119,8 +128,9 @@ class GameManager {
         return { 
             success: true, 
             message: 'Challenge successfully withdrawn!',
-            challengerId: game.challengerId,
-            challengedId: game.challengedId
+            challengerId: challengerId,
+            challengedId: challengedId,
+            gameId: gameId
         };
     }
 }

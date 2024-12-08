@@ -41,12 +41,30 @@ client.on('interactionCreate', async interaction => {
 
             const embed = new EmbedBuilder()
                 .setColor('#FFD700')
-                .setTitle('🎮 New Challenge!')
-                .setDescription(`${opponent.toString()}, you have been challenged by ${interaction.user.toString()}!`)
+                .setTitle('🎮 Three Card Game - New Challenge!')
+                .setDescription(`${opponent.toString()}, you have been challenged to a game by ${interaction.user.toString()}!`)
                 .addFields(
-                    { name: '🎲 Game', value: 'Three Card Game' },
-                    { name: '⏳ Time Remaining', value: '2 hours' }
+                    { name: '🎲 Game Information', value: 
+                        '**Three Card Game**\n' +
+                        `• The Oppressed ${CARDS.oppressed} defeats The Emperor ${CARDS.emperor}\n` +
+                        `• The Emperor ${CARDS.emperor} defeats The People ${CARDS.people}\n` +
+                        `• The People ${CARDS.people} defeats The Oppressed ${CARDS.oppressed}`
+                    },
+                    { name: '👥 Players', value: 
+                        `**Challenger:** ${interaction.user.toString()}\n` +
+                        `**Challenged:** ${opponent.toString()}`
+                    },
+                    { name: '⏳ Challenge Status', value: 
+                        '• Challenge expires in: 2 hours\n' +
+                        '• Waiting for response...'
+                    },
+                    { name: '📝 Actions Available', value: 
+                        `• ✅ **Accept** - Join the game and start playing\n` +
+                        `• ❌ **Deny** - Decline this challenge request\n` +
+                        `• 🔄 **Withdraw** - Cancel your challenge (challenger only)`
+                    }
                 )
+                .setFooter({ text: 'Challenge will expire in 2 hours' })
                 .setTimestamp();
 
             const acceptButton = new ButtonBuilder()
@@ -67,7 +85,12 @@ client.on('interactionCreate', async interaction => {
                 .setStyle(ButtonStyle.Secondary)
                 .setEmoji('🔄');
 
-            const row = new ActionRowBuilder().addComponents(acceptButton, denyButton, withdrawButton);
+            const row = new ActionRowBuilder()
+                .addComponents(
+                    acceptButton.setStyle(ButtonStyle.Success),
+                    denyButton.setStyle(ButtonStyle.Danger),
+                    withdrawButton.setStyle(ButtonStyle.Secondary)
+                );
 
             const response = await interaction.reply({
                 embeds: [embed],
@@ -214,32 +237,39 @@ client.on('interactionCreate', async interaction => {
         } else if (action === 'deny' || action === 'withdraw') {
             let actionResult = { success: true };
             
+            // For withdraw action, check if user is the challenger
+            if (action === 'withdraw' && interaction.user.id !== challengerId) {
+                await interaction.reply({ content: '❌ Only the challenger can withdraw their challenge!', ephemeral: true });
+                return;
+            }
+            // For other actions (accept/deny), check if user is the challenged player
+            else if (action !== 'withdraw' && interaction.user.id !== challengedId) {
+                await interaction.reply({ content: '❌ This button is not for you!', ephemeral: true });
+                return;
+            }
+
             if (action === 'withdraw') {
                 actionResult = gameManager.withdrawChallenge(challengerId);
                 if (actionResult.error) {
-                    await interaction.reply({
-                        content: `❌ ${actionResult.error}`,
-                        ephemeral: true
-                    });
+                    await interaction.reply({ content: `❌ ${actionResult.error}`, ephemeral: true });
                     return;
                 }
             } else if (action === 'deny') {
                 if (interaction.user.id !== challengedId) {
-                    await interaction.reply({
-                        content: '❌ Only the challenged player can deny the challenge!',
-                        ephemeral: true
-                    });
+                    await interaction.reply({ content: '❌ Only the challenged player can deny the challenge!', ephemeral: true });
                     return;
                 }
                 gameManager.removeGame(challengerId, challengedId);
             }
 
-            // Clear the timeout
+            // Clear the timeout if it exists
             const timeoutKey = `${challengerId}_${challengedId}`;
-            clearTimeout(challengeTimeout.get(timeoutKey));
-            challengeTimeout.delete(timeoutKey);
+            if (challengeTimeout.has(timeoutKey)) {
+                clearTimeout(challengeTimeout.get(timeoutKey));
+                challengeTimeout.delete(timeoutKey);
+            }
 
-            // Create response embed
+            // Create response embed with more detailed information
             const actionText = action === 'deny' ? 'Denied' : 'Withdrawn';
             const statusText = action === 'deny' ? 
                 `Challenge was denied by <@${challengedId}>` : 
@@ -249,20 +279,28 @@ client.on('interactionCreate', async interaction => {
                 .setTitle(`❌ Challenge ${actionText}`)
                 .setColor('#ff0000')
                 .addFields(
-                    { name: '🎲 Game', value: 'Three Card Game' },
-                    { name: '📌 Status', value: statusText }
+                    { name: '🎲 Game Information', value: 'Three Card Game Challenge' },
+                    { name: '👥 Players', value: 
+                        `Challenger: <@${challengerId}>\n` +
+                        `Challenged: <@${challengedId}>`
+                    },
+                    { name: '📌 Status', value: statusText },
+                    { name: '⏰ Time', value: 'Challenge ended: ' + new Date().toLocaleString() }
                 )
+                .setFooter({ text: `Challenge ${actionText.toLowerCase()} successfully` })
                 .setTimestamp();
 
             // Update the original message
             await interaction.update({
                 embeds: [responseEmbed],
-                components: []
+                components: [] // Remove all buttons
             });
 
-            // Notify the other player in the channel
+            // Notify the other player in the channel with a more detailed message
+            const notifyPlayer = action === 'deny' ? challengerId : challengedId;
+            const notifyAction = action === 'deny' ? 'denied' : 'withdrawn';
             await interaction.followUp({
-                content: `<@${action === 'deny' ? challengerId : challengedId}>, the challenge has been ${action === 'deny' ? 'denied' : 'withdrawn'}.`
+                content: `📢 <@${notifyPlayer}>, the challenge has been ${notifyAction}. You can start a new challenge at any time using \`/challenge\`.`
             });
         }
     } else if (interaction.isStringSelectMenu()) {
