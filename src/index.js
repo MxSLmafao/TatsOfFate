@@ -146,33 +146,39 @@ client.on('interactionCreate', async interaction => {
             clearTimeout(challengeTimeout.get(timeoutKey));
             challengeTimeout.delete(timeoutKey);
 
-            const acceptedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
-                .setTitle('🎮 Challenge Accepted!')
-                .setColor('#00ff00')
-                .setFields(
-                    { name: '🎲 Game', value: 'Three Card Game' },
-                    { name: '📌 Status', value: 'Game has started!' }
-                );
-
-            await interaction.update({
-                embeds: [acceptedEmbed],
-                components: []
-            });
-
-            // Send card selection instructions
             const game = gameManager.getGame(result.gameId);
-            const gameEmbed = createGameStatusEmbed(game);
+            const cardMenu = createCardSelectionMenu(challengerId, challengedId);
 
-            // Send game status and card selection to both players
-            await interaction.followUp({
-                embeds: [gameEmbed],
-                components: [createCardSelectionMenu(challengerId, challengedId)],
-                ephemeral: true
-            });
+            if (!cardMenu) {
+                await interaction.reply({ 
+                    content: '❌ Error creating the game menu. Please try again.',
+                    ephemeral: true 
+                });
+                return;
+            }
 
-            await interaction.client.users.cache.get(challengerId).send({
-                embeds: [gameEmbed],
-                components: [createCardSelectionMenu(challengerId, challengedId)]
+            const startGameEmbed = new EmbedBuilder()
+                .setColor('#FFD700')
+                .setTitle('🎮 Game Started!')
+                .setDescription(`Round ${game.currentRound} - Players, select your cards!`)
+                .addFields(
+                    { name: '👥 Players', value: 
+                        `Challenger: ${interaction.client.users.cache.get(challengerId)}\n` +
+                        `Challenged: ${interaction.client.users.cache.get(challengedId)}`
+                    },
+                    { name: '📝 Available Cards', value:
+                        `• The Oppressed ${CARDS.oppressed} - The power of unity\n` +
+                        `• The Emperor ${CARDS.emperor} - The symbol of authority\n` +
+                        `• The People ${CARDS.people} - The voice of the masses`
+                    },
+                    { name: '⏳ Time to Select', value: 'Make your selection!' }
+                )
+                .setTimestamp();
+
+            // Update the channel message with game status and card selection
+            await interaction.update({
+                embeds: [startGameEmbed],
+                components: [cardMenu]
             });
         } else if (action === 'deny' || action === 'withdraw') {
             // Verify user permissions for the action
@@ -204,10 +210,10 @@ client.on('interactionCreate', async interaction => {
                 `Challenge was denied by <@${challengedId}>` : 
                 `Challenge was withdrawn by <@${challengerId}>`;
 
-            const responseEmbed = EmbedBuilder.from(interaction.message.embeds[0])
+            const responseEmbed = new EmbedBuilder()
                 .setTitle(`❌ Challenge ${actionText}`)
                 .setColor('#ff0000')
-                .setFields(
+                .addFields(
                     { name: '🎲 Game', value: 'Three Card Game' },
                     { name: '📌 Status', value: statusText }
                 )
@@ -225,11 +231,22 @@ client.on('interactionCreate', async interaction => {
             const notifyUserId = action === 'deny' ? challengerId : challengedId;
             try {
                 const user = await interaction.client.users.fetch(notifyUserId);
+                const dmEmbed = new EmbedBuilder()
+                    .setTitle(`🎮 Challenge ${actionText}`)
+                    .setColor('#ff0000')
+                    .setDescription(statusText)
+                    .setTimestamp();
+                
                 await user.send({
-                    embeds: [responseEmbed]
+                    embeds: [dmEmbed]
                 });
+                console.log(`Notified ${action === 'deny' ? 'challenger' : 'challenged player'} about ${action}`);
             } catch (error) {
                 console.error('Failed to notify user:', error);
+                await interaction.followUp({
+                    content: `⚠️ Couldn't notify <@${notifyUserId}> about the ${action}. They might have DMs disabled.`,
+                    ephemeral: true
+                });
             }
         }
     } else if (interaction.isStringSelectMenu()) {
@@ -263,68 +280,46 @@ client.on('interactionCreate', async interaction => {
             const gameEmbed = createGameStatusEmbed(game, result);
 
             // If game is complete, send final results
-            if (result.gameComplete) {
-                await interaction.message.edit({
-                    embeds: [gameEmbed],
-                    components: []
-                });
-
-                // Send to both players
-                await interaction.client.users.cache.get(challengerId).send({
-                    embeds: [gameEmbed],
-                    components: []
-                });
-                await interaction.client.users.cache.get(challengedId).send({
-                    embeds: [gameEmbed],
-                    components: []
-                });
-            } else {
-                // Send next round
-                await interaction.message.edit({
-                    embeds: [gameEmbed],
-                    components: [createCardSelectionMenu(challengerId, challengedId)]
-                });
-
-                // Send to both players
-                await interaction.client.users.cache.get(challengerId).send({
-                    embeds: [gameEmbed],
-                    components: [createCardSelectionMenu(challengerId, challengedId)]
-                });
-                await interaction.client.users.cache.get(challengedId).send({
-                    embeds: [gameEmbed],
-                    components: [createCardSelectionMenu(challengerId, challengedId)]
-                });
-            }
+            // Update the game status in the channel
+            await interaction.message.edit({
+                embeds: [gameEmbed],
+                components: result.gameComplete ? [] : [createCardSelectionMenu(challengerId, challengedId)]
+            });
         }
     }
 });
 
 function createCardSelectionMenu(challengerId, challengedId) {
-    const menu = new StringSelectMenuBuilder()
-        .setCustomId(`card_select_${challengerId}_${challengedId}`)
-        .setPlaceholder('Choose your card')
-        .addOptions([
-            {
-                label: 'The Oppressed',
-                description: 'The power of unity',
-                value: 'oppressed',
-                emoji: CARDS.oppressed
-            },
-            {
-                label: 'The Emperor',
-                description: 'The symbol of authority',
-                value: 'emperor',
-                emoji: CARDS.emperor
-            },
-            {
-                label: 'The People',
-                description: 'The voice of the masses',
-                value: 'people',
-                emoji: CARDS.people
-            }
-        ]);
+    try {
+        const menu = new StringSelectMenuBuilder()
+            .setCustomId(`card_select_${challengerId}_${challengedId}`)
+            .setPlaceholder('Choose your card')
+            .addOptions([
+                {
+                    label: 'The Oppressed',
+                    description: 'The power of unity',
+                    value: 'oppressed',
+                    emoji: CARDS.oppressed
+                },
+                {
+                    label: 'The Emperor',
+                    description: 'The symbol of authority',
+                    value: 'emperor',
+                    emoji: CARDS.emperor
+                },
+                {
+                    label: 'The People',
+                    description: 'The voice of the masses',
+                    value: 'people',
+                    emoji: CARDS.people
+                }
+            ]);
 
-    return new ActionRowBuilder().addComponents(menu);
+        return new ActionRowBuilder().addComponents(menu);
+    } catch (error) {
+        console.error('Error creating card selection menu:', error);
+        return null;
+    }
 }
 
 function createGameStatusEmbed(game, roundResult = null) {

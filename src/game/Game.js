@@ -56,12 +56,22 @@ class Game {
 
     getWinner() {
         if (!this.isComplete()) {
-            return null;
+            return {
+                error: 'Round not complete',
+                gameComplete: false
+            };
         }
 
         if (this.player1Card === this.player2Card) {
             console.log(`Round ${this.currentRound} ended in a tie!`);
-            return null; // Tie
+            return {
+                roundWinner: null,
+                player1Card: this.player1Card,
+                player2Card: this.player2Card,
+                gameComplete: false,
+                currentRound: this.currentRound,
+                scores: this.scores
+            };
         }
 
         const combination = `${this.player1Card}-${this.player2Card}`;
