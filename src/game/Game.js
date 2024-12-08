@@ -62,15 +62,21 @@ class Game {
             };
         }
 
+        const cards = {
+            player1: this.player1Card,
+            player2: this.player2Card
+        };
+
         if (this.player1Card === this.player2Card) {
             console.log(`Round ${this.currentRound} ended in a tie!`);
             return {
                 roundWinner: null,
-                player1Card: this.player1Card,
-                player2Card: this.player2Card,
+                cards,
                 gameComplete: false,
                 currentRound: this.currentRound,
-                scores: this.scores
+                scores: this.scores,
+                challengerId: this.challengerId,
+                challengedId: this.challengedId
             };
         }
 

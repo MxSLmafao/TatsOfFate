@@ -147,8 +147,15 @@ client.on('interactionCreate', async interaction => {
             challengeTimeout.delete(timeoutKey);
 
             const game = gameManager.getGame(result.gameId);
-            const cardMenu = createCardSelectionMenu(challengerId, challengedId);
+            if (!game) {
+                await interaction.reply({ 
+                    content: '❌ Error retrieving the game. Please try again.',
+                    ephemeral: true 
+                });
+                return;
+            }
 
+            const cardMenu = createCardSelectionMenu(challengerId, challengedId);
             if (!cardMenu) {
                 await interaction.reply({ 
                     content: '❌ Error creating the game menu. Please try again.',
@@ -160,41 +167,59 @@ client.on('interactionCreate', async interaction => {
             const startGameEmbed = new EmbedBuilder()
                 .setColor('#FFD700')
                 .setTitle('🎮 Game Started!')
-                .setDescription(`Round ${game.currentRound} - Players, select your cards!`)
+                .setDescription(`Round ${game.currentRound} of ${game.maxRounds} - Choose Your Cards!`)
                 .addFields(
                     { name: '👥 Players', value: 
-                        `Challenger: ${interaction.client.users.cache.get(challengerId)}\n` +
-                        `Challenged: ${interaction.client.users.cache.get(challengedId)}`
+                        `Challenger: <@${challengerId}>\n` +
+                        `Challenged: <@${challengedId}>`
                     },
                     { name: '📝 Available Cards', value:
                         `• The Oppressed ${CARDS.oppressed} - The power of unity\n` +
                         `• The Emperor ${CARDS.emperor} - The symbol of authority\n` +
                         `• The People ${CARDS.people} - The voice of the masses`
                     },
-                    { name: '⏳ Time to Select', value: 'Make your selection!' }
+                    { name: '⚔️ Current Round', value: `Round ${game.currentRound}` },
+                    { name: '📊 Scores', value: 
+                        `<@${challengerId}>: ${game.scores[challengerId]} 🏆\n` +
+                        `<@${challengedId}>: ${game.scores[challengedId]} 🏆`
+                    }
                 )
                 .setTimestamp();
 
-            // Update the channel message with game status and card selection
-            await interaction.update({
-                embeds: [startGameEmbed],
-                components: [cardMenu]
-            });
+            try {
+                // Update the channel message with game status and card selection
+                await interaction.update({
+                    embeds: [startGameEmbed],
+                    components: [cardMenu]
+                });
+
+                // Send a private confirmation message
+                await interaction.followUp({
+                    content: '✅ Game started! Select your card from the menu above.',
+                    ephemeral: true
+                });
+            } catch (error) {
+                console.error('Error updating game status:', error);
+                await interaction.followUp({
+                    content: '❌ There was an error starting the game. Please try again.',
+                    ephemeral: true
+                });
+            }
         } else if (action === 'deny' || action === 'withdraw') {
-            // Verify user permissions for the action
+            // Verify permissions
             if (action === 'withdraw') {
                 if (interaction.user.id !== challengerId) {
-                    await interaction.reply({ 
-                        content: '❌ Only the challenger can withdraw their challenge!', 
-                        ephemeral: true 
+                    await interaction.reply({
+                        content: '❌ Only the challenger can withdraw their challenge!',
+                        ephemeral: true
                     });
                     return;
                 }
             } else if (action === 'deny') {
                 if (interaction.user.id !== challengedId) {
-                    await interaction.reply({ 
-                        content: '❌ Only the challenged player can deny the challenge!', 
-                        ephemeral: true 
+                    await interaction.reply({
+                        content: '❌ Only the challenged player can deny the challenge!',
+                        ephemeral: true
                     });
                     return;
                 }
@@ -205,6 +230,10 @@ client.on('interactionCreate', async interaction => {
             clearTimeout(challengeTimeout.get(timeoutKey));
             challengeTimeout.delete(timeoutKey);
 
+            // Clean up the game state
+            gameManager.removeGame(challengerId, challengedId);
+
+            // Create response embed
             const actionText = action === 'deny' ? 'Denied' : 'Withdrawn';
             const statusText = action === 'deny' ? 
                 `Challenge was denied by <@${challengedId}>` : 
@@ -219,35 +248,16 @@ client.on('interactionCreate', async interaction => {
                 )
                 .setTimestamp();
 
+            // Update the original message
             await interaction.update({
                 embeds: [responseEmbed],
                 components: []
             });
-            
-            // Clean up the game state
-            gameManager.removeGame(challengerId, challengedId);
-            
-            // Notify the other player
-            const notifyUserId = action === 'deny' ? challengerId : challengedId;
-            try {
-                const user = await interaction.client.users.fetch(notifyUserId);
-                const dmEmbed = new EmbedBuilder()
-                    .setTitle(`🎮 Challenge ${actionText}`)
-                    .setColor('#ff0000')
-                    .setDescription(statusText)
-                    .setTimestamp();
-                
-                await user.send({
-                    embeds: [dmEmbed]
-                });
-                console.log(`Notified ${action === 'deny' ? 'challenger' : 'challenged player'} about ${action}`);
-            } catch (error) {
-                console.error('Failed to notify user:', error);
-                await interaction.followUp({
-                    content: `⚠️ Couldn't notify <@${notifyUserId}> about the ${action}. They might have DMs disabled.`,
-                    ephemeral: true
-                });
-            }
+
+            // Notify the other player in the channel
+            await interaction.followUp({
+                content: `<@${action === 'deny' ? challengerId : challengedId}>, the challenge has been ${action === 'deny' ? 'denied' : 'withdrawn'}.`
+            });
         }
     } else if (interaction.isStringSelectMenu()) {
         if (interaction.customId.startsWith('card_select_')) {
@@ -267,16 +277,38 @@ client.on('interactionCreate', async interaction => {
 
             await interaction.deferUpdate();
 
+            const game = gameManager.getGame(result.gameId);
             if (result.waitingForOpponent) {
+                const waitingEmbed = new EmbedBuilder()
+                    .setColor('#FFD700')
+                    .setTitle('🎮 Three Card Game - Waiting')
+                    .setDescription(`Round ${game.currentRound} of ${game.maxRounds} - Waiting for opponent...`)
+                    .addFields(
+                        { name: '👥 Players', value: 
+                            `Challenger: <@${challengerId}>\n` +
+                            `Challenged: <@${challengedId}>`
+                        },
+                        { name: '🎮 Status', value: `<@${playerId}> has selected their card. Waiting for the other player...` },
+                        { name: '📊 Scores', value: 
+                            `<@${challengerId}>: ${game.scores[challengerId]} 🏆\n` +
+                            `<@${challengedId}>: ${game.scores[challengedId]} 🏆`
+                        }
+                    )
+                    .setTimestamp();
+
+                await interaction.update({
+                    embeds: [waitingEmbed],
+                    components: [createCardSelectionMenu(challengerId, challengedId)]
+                });
+
                 await interaction.followUp({
-                    content: '✅ Card selected! Waiting for opponent...',
+                    content: '✅ Your card has been selected! Waiting for your opponent to choose...',
                     ephemeral: true
                 });
                 return;
             }
 
             // Round complete
-            const game = gameManager.getGame(result.gameId);
             const gameEmbed = createGameStatusEmbed(game, result);
 
             // If game is complete, send final results
@@ -293,23 +325,23 @@ function createCardSelectionMenu(challengerId, challengedId) {
     try {
         const menu = new StringSelectMenuBuilder()
             .setCustomId(`card_select_${challengerId}_${challengedId}`)
-            .setPlaceholder('Choose your card')
+            .setPlaceholder('Choose your card for this round')
             .addOptions([
                 {
                     label: 'The Oppressed',
-                    description: 'The power of unity',
+                    description: 'Defeats The Emperor (Power of Unity)',
                     value: 'oppressed',
                     emoji: CARDS.oppressed
                 },
                 {
                     label: 'The Emperor',
-                    description: 'The symbol of authority',
+                    description: 'Defeats The People (Symbol of Authority)',
                     value: 'emperor',
                     emoji: CARDS.emperor
                 },
                 {
                     label: 'The People',
-                    description: 'The voice of the masses',
+                    description: 'Defeats The Oppressed (Voice of Masses)',
                     value: 'people',
                     emoji: CARDS.people
                 }
@@ -327,6 +359,10 @@ function createGameStatusEmbed(game, roundResult = null) {
         .setColor('#FFD700')
         .setTitle(`🎮 Three Card Game - Round ${game.currentRound}/${game.maxRounds}`)
         .addFields(
+            { name: '👥 Players', value: 
+                `Challenger: <@${game.challengerId}>\n` +
+                `Challenged: <@${game.challengedId}>`
+            },
             { name: '📊 Scores', value: 
                 `<@${game.challengerId}>: ${game.scores[game.challengerId]} 🏆\n` +
                 `<@${game.challengedId}>: ${game.scores[game.challengedId]} 🏆`
