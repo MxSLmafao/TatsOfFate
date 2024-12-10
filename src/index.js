@@ -83,13 +83,13 @@ client.on('interactionCreate', async interaction => {
                 .setCustomId(`withdraw_${interaction.user.id}_${opponent.id}`)
                 .setLabel('Withdraw Challenge')
                 .setStyle(ButtonStyle.Secondary)
-                .setEmoji('🔄');
+                .setEmoji('↩️');
 
             const row = new ActionRowBuilder()
                 .addComponents(
-                    acceptButton.setStyle(ButtonStyle.Success),
-                    denyButton.setStyle(ButtonStyle.Danger),
-                    withdrawButton.setStyle(ButtonStyle.Secondary)
+                    acceptButton,
+                    denyButton,
+                    withdrawButton
                 );
 
             const response = await interaction.reply({
@@ -152,14 +152,31 @@ client.on('interactionCreate', async interaction => {
     } else if (interaction.isButton()) {
         const [action, challengerId, challengedId] = interaction.customId.split('_');
         
+        // Validate button interactions
+        if (!challengerId || !challengedId) {
+            await interaction.reply({ 
+                content: '❌ Invalid challenge information. Please try creating a new challenge.',
+                ephemeral: true 
+            });
+            return;
+        }
+
         // For withdraw action, check if user is the challenger
         if (action === 'withdraw' && interaction.user.id !== challengerId) {
-            await interaction.reply({ content: '❌ Only the challenger can withdraw their challenge!', ephemeral: true });
+            console.log(`Invalid withdraw attempt by user ${interaction.user.id} for challenge by ${challengerId}`);
+            await interaction.reply({ 
+                content: '❌ Only the challenger can withdraw their challenge!', 
+                ephemeral: true 
+            });
             return;
         }
         // For other actions (accept/deny), check if user is the challenged player
         else if (action !== 'withdraw' && interaction.user.id !== challengedId) {
-            await interaction.reply({ content: '❌ This button is not for you!', ephemeral: true });
+            console.log(`Invalid ${action} attempt by user ${interaction.user.id} for challenge to ${challengedId}`);
+            await interaction.reply({ 
+                content: '❌ This button is not for you!', 
+                ephemeral: true 
+            });
             return;
         }
 
@@ -235,73 +252,105 @@ client.on('interactionCreate', async interaction => {
                 });
             }
         } else if (action === 'deny' || action === 'withdraw') {
-            let actionResult = { success: true };
-            
-            // For withdraw action, check if user is the challenger
-            if (action === 'withdraw' && interaction.user.id !== challengerId) {
-                await interaction.reply({ content: '❌ Only the challenger can withdraw their challenge!', ephemeral: true });
+            try {
+                console.log(`Processing ${action} action from user ${interaction.user.id}`);
+                console.log(`Challenger ID: ${challengerId}, Challenged ID: ${challengedId}`);
+                
+                // Validate user permissions
+                if (action === 'withdraw') {
+                    if (interaction.user.id !== challengerId) {
+                        console.log(`Invalid withdraw attempt: User ${interaction.user.id} is not the challenger`);
+                        await interaction.reply({ 
+                            content: '❌ Only the challenger can withdraw their challenge!',
+                            ephemeral: true 
+                        });
+                        return;
+                    }
+                } else if (action === 'deny') {
+                    if (interaction.user.id !== challengedId) {
+                        console.log(`Invalid deny attempt: User ${interaction.user.id} is not the challenged player`);
+                        await interaction.reply({ 
+                            content: '❌ Only the challenged player can deny the challenge!',
+                            ephemeral: true 
+                        });
+                        return;
+                    }
+                }
+
+                // Handle game state changes
+                if (action === 'withdraw') {
+                    console.log(`Attempting to withdraw challenge by challenger ${challengerId}`);
+                    const withdrawResult = gameManager.withdrawChallenge(challengerId);
+                    
+                    if (withdrawResult.error) {
+                        console.log(`Withdraw failed: ${withdrawResult.error}`);
+                        await interaction.reply({ 
+                            content: `❌ ${withdrawResult.error}`,
+                            ephemeral: true 
+                        });
+                        return;
+                    }
+                    
+                    console.log(`Challenge successfully withdrawn by ${challengerId}`);
+                } else {
+                    console.log(`Attempting to deny challenge for challenged player ${challengedId}`);
+                    gameManager.removeGame(challengerId, challengedId);
+                    console.log(`Challenge successfully denied by ${challengedId}`);
+                }
+
+                // Clear challenge timeout
+                const timeoutKey = `${challengerId}_${challengedId}`;
+                if (challengeTimeout.has(timeoutKey)) {
+                    clearTimeout(challengeTimeout.get(timeoutKey));
+                    challengeTimeout.delete(timeoutKey);
+                }
+
+                // Prepare response messages
+                const actionText = action === 'deny' ? 'Denied' : 'Withdrawn';
+                const statusText = action === 'deny' 
+                    ? `Challenge was denied by <@${challengedId}>`
+                    : `Challenge was withdrawn by <@${challengerId}>`;
+
+                // Create and send response embed
+                const responseEmbed = new EmbedBuilder()
+                    .setTitle(`❌ Challenge ${actionText}`)
+                    .setColor('#ff0000')
+                    .addFields(
+                        { name: '🎲 Game Information', value: 'Three Card Game Challenge' },
+                        { 
+                            name: '👥 Players',
+                            value: `Challenger: <@${challengerId}>\nChallenged: <@${challengedId}>`
+                        },
+                        { name: '📌 Status', value: statusText },
+                        { 
+                            name: '⏰ Time',
+                            value: 'Challenge ended: ' + new Date().toLocaleString() 
+                        }
+                    )
+                    .setFooter({ text: `Challenge ${actionText.toLowerCase()} successfully` })
+                    .setTimestamp();
+
+                // Update original message and send notification
+                await interaction.update({
+                    embeds: [responseEmbed],
+                    components: [] // Remove all buttons
+                });
+
+                // Notify relevant player
+                const notifyPlayer = action === 'deny' ? challengerId : challengedId;
+                const notifyAction = action === 'deny' ? 'denied' : 'withdrawn';
+                await interaction.followUp({
+                    content: `📢 <@${notifyPlayer}>, the challenge has been ${notifyAction}. You can start a new challenge at any time using \`/challenge\`.`
+                });
+
+            } catch (error) {
+                console.error('Error handling button interaction:', error);
+                await interaction.reply({ 
+                    content: '❌ An error occurred while processing your request. Please try again.',
+                    ephemeral: true 
+                });
                 return;
             }
-            // For other actions (accept/deny), check if user is the challenged player
-            else if (action !== 'withdraw' && interaction.user.id !== challengedId) {
-                await interaction.reply({ content: '❌ This button is not for you!', ephemeral: true });
-                return;
-            }
-
-            if (action === 'withdraw') {
-                actionResult = gameManager.withdrawChallenge(challengerId);
-                if (actionResult.error) {
-                    await interaction.reply({ content: `❌ ${actionResult.error}`, ephemeral: true });
-                    return;
-                }
-            } else if (action === 'deny') {
-                if (interaction.user.id !== challengedId) {
-                    await interaction.reply({ content: '❌ Only the challenged player can deny the challenge!', ephemeral: true });
-                    return;
-                }
-                gameManager.removeGame(challengerId, challengedId);
-            }
-
-            // Clear the timeout if it exists
-            const timeoutKey = `${challengerId}_${challengedId}`;
-            if (challengeTimeout.has(timeoutKey)) {
-                clearTimeout(challengeTimeout.get(timeoutKey));
-                challengeTimeout.delete(timeoutKey);
-            }
-
-            // Create response embed with more detailed information
-            const actionText = action === 'deny' ? 'Denied' : 'Withdrawn';
-            const statusText = action === 'deny' ? 
-                `Challenge was denied by <@${challengedId}>` : 
-                `Challenge was withdrawn by <@${challengerId}>`;
-
-            const responseEmbed = new EmbedBuilder()
-                .setTitle(`❌ Challenge ${actionText}`)
-                .setColor('#ff0000')
-                .addFields(
-                    { name: '🎲 Game Information', value: 'Three Card Game Challenge' },
-                    { name: '👥 Players', value: 
-                        `Challenger: <@${challengerId}>\n` +
-                        `Challenged: <@${challengedId}>`
-                    },
-                    { name: '📌 Status', value: statusText },
-                    { name: '⏰ Time', value: 'Challenge ended: ' + new Date().toLocaleString() }
-                )
-                .setFooter({ text: `Challenge ${actionText.toLowerCase()} successfully` })
-                .setTimestamp();
-
-            // Update the original message
-            await interaction.update({
-                embeds: [responseEmbed],
-                components: [] // Remove all buttons
-            });
-
-            // Notify the other player in the channel with a more detailed message
-            const notifyPlayer = action === 'deny' ? challengerId : challengedId;
-            const notifyAction = action === 'deny' ? 'denied' : 'withdrawn';
-            await interaction.followUp({
-                content: `📢 <@${notifyPlayer}>, the challenge has been ${notifyAction}. You can start a new challenge at any time using \`/challenge\`.`
-            });
         }
     } else if (interaction.isStringSelectMenu()) {
         if (interaction.customId.startsWith('card_select_')) {
@@ -323,6 +372,15 @@ client.on('interactionCreate', async interaction => {
 
             const game = gameManager.getGame(result.gameId);
             if (result.waitingForOpponent) {
+                // Verify game exists before accessing its properties
+                if (!game) {
+                    await interaction.followUp({
+                        content: '❌ Error: Game state not found. Please try again.',
+                        ephemeral: true
+                    });
+                    return;
+                }
+
                 const waitingEmbed = new EmbedBuilder()
                     .setColor('#FFD700')
                     .setTitle('🎮 Three Card Game - Waiting')

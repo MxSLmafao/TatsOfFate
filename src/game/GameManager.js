@@ -84,7 +84,8 @@ class GameManager {
         return {
             success: true,
             currentRound: game.currentRound,
-            waitingForOpponent: true
+            waitingForOpponent: true,
+            gameId: gameId
         };
     }
 
@@ -93,45 +94,64 @@ class GameManager {
     }
 
     withdrawChallenge(challengerId) {
-        // Verify there's a pending challenge
-        const gameId = this.playerToGame.get(challengerId);
-        if (!gameId) {
-            return { error: 'No pending challenge found!' };
+        try {
+            console.log(`Attempting to withdraw challenge for challenger: ${challengerId}`);
+            
+            // Verify there's a pending challenge
+            const gameId = this.playerToGame.get(challengerId);
+            if (!gameId) {
+                console.log(`No pending challenge found for challenger: ${challengerId}`);
+                return { error: 'No pending challenge found!' };
+            }
+
+            // Verify game exists
+            const game = this.games.get(gameId);
+            if (!game) {
+                console.log(`Game not found for ID: ${gameId}, cleaning up mappings`);
+                // Clean up any lingering player-to-game mappings
+                this.playerToGame.delete(challengerId);
+                return { error: 'Game not found!' };
+            }
+
+            // Verify the user is the challenger
+            if (game.challengerId !== challengerId) {
+                console.log(`User ${challengerId} attempted to withdraw challenge they didn't create`);
+                return { error: 'Only the challenger can withdraw their challenge!' };
+            }
+
+            // Verify the game hasn't started
+            if (game.started) {
+                console.log(`Cannot withdraw game ${gameId} - game has already started`);
+                return { error: 'Cannot withdraw after the game has started!' };
+            }
+
+            // Store player IDs before cleanup
+            const challengedId = game.challengedId;
+
+            // Clean up the game state
+            console.log(`Cleaning up game state for game ${gameId}`);
+            console.log(`- Removing player mapping for challenger: ${challengerId}`);
+            this.playerToGame.delete(game.challengerId);
+            console.log(`- Removing player mapping for challenged: ${challengedId}`);
+            this.playerToGame.delete(game.challengedId);
+            console.log(`- Removing game from games collection`);
+            this.games.delete(gameId);
+
+            console.log(`Challenge withdrawn successfully - Game ID: ${gameId}, Challenger: ${challengerId}, Challenged: ${challengedId}`);
+
+            return { 
+                success: true, 
+                message: 'Challenge successfully withdrawn!',
+                challengerId: challengerId,
+                challengedId: challengedId,
+                gameId: gameId
+            };
+        } catch (error) {
+            console.error('Error in withdrawChallenge:', error);
+            console.error('Error details:', error.message);
+            console.error('Error stack:', error.stack);
+            return { error: 'An error occurred while withdrawing the challenge. Please try again.' };
         }
-
-        // Verify game exists
-        const game = this.games.get(gameId);
-        if (!game) {
-            // Clean up any lingering player-to-game mappings
-            this.playerToGame.delete(challengerId);
-            return { error: 'Game not found!' };
-        }
-
-        // Verify the user is the challenger
-        if (game.challengerId !== challengerId) {
-            return { error: 'Only the challenger can withdraw their challenge!' };
-        }
-
-        // Verify the game hasn't started
-        if (game.started) {
-            return { error: 'Cannot withdraw after the game has started!' };
-        }
-
-        // Store player IDs before cleanup
-        const challengedId = game.challengedId;
-
-        // Clean up the game state
-        this.playerToGame.delete(game.challengerId);
-        this.playerToGame.delete(game.challengedId);
-        this.games.delete(gameId);
-
-        return { 
-            success: true, 
-            message: 'Challenge successfully withdrawn!',
-            challengerId: challengerId,
-            challengedId: challengedId,
-            gameId: gameId
-        };
     }
 }
 
